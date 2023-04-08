@@ -198,6 +198,9 @@ class KotlinDemoGame(plugin:Plugin): MapGame(plugin), Listener {
             }
         }
 
+        // The reason we use this method is that they changed the way you set game rules in newer versions of the game
+        VersionIndependentUtils.get().setGameRule(world, "keepInventory", "true")
+
         // We call sendBeginEvent here since our game starts instantly. If the game starts after a countdown call this once the countdown is over instead
         sendBeginEvent()
         started = true
