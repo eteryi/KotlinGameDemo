@@ -1,0 +1,16 @@
+main: "net.novauniverse.game.kotlindemo.NovaKotlinGameDemo"
+name: "KotlinGameDemo"
+api-version: 1.19
+version: 1.0.0
+description: "A minigame made in kotlin"
+authors:
+  - Zeeraa
+
+website: "https://novauniverse.net"
+
+depend:
+  - NovaCore
+  - NovaCoreGameEngine
+
+softdepend:
+  - NovaGamesTarget
