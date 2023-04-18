@@ -33,8 +33,8 @@ class NovaKotlinGameDemo: JavaPlugin() {
 
 		// To support our docker based tournament system we need to obey the requested data directory if it's not null in game manager
 		if (NovaCoreGameEngine.getInstance().requestedGameDataDirectory != null) {
-			mapFolder = File (NovaCoreGameEngine.getInstance().requestedGameDataDirectory.absolutePath + File.separator + NovaCoreGameEngine.getInstance().requestedGameDataDirectory + File.separator + "Maps")
-			worldFolder = File (NovaCoreGameEngine.getInstance().requestedGameDataDirectory.absolutePath + File.separator + NovaCoreGameEngine.getInstance().requestedGameDataDirectory + File.separator + "Worlds")
+			mapFolder = File (NovaCoreGameEngine.getInstance().requestedGameDataDirectory.absolutePath + File.separator + "KotlinGameDemo" + File.separator + "Maps")
+			worldFolder = File (NovaCoreGameEngine.getInstance().requestedGameDataDirectory.absolutePath + File.separator + "KotlinGameDemo" + File.separator + "Worlds")
 		}
 
 		FileUtils.forceMkdir(mapFolder)
