@@ -6,10 +6,12 @@ import net.zeeraa.novacore.commons.log.Log
 import net.zeeraa.novacore.spigot.gameengine.NovaCoreGameEngine
 import net.zeeraa.novacore.spigot.gameengine.module.modules.game.GameManager
 import net.zeeraa.novacore.spigot.gameengine.module.modules.game.map.mapmodule.MapModuleManager
+import net.zeeraa.novacore.spigot.gameengine.module.modules.game.mapselector.selectors.guivoteselector.GUIMapVote
 import net.zeeraa.novacore.spigot.gameengine.module.modules.gamelobby.GameLobby
 import net.zeeraa.novacore.spigot.module.ModuleManager
 import net.zeeraa.novacore.spigot.module.modules.compass.CompassTracker
 import org.apache.commons.io.FileUtils
+import org.bukkit.Bukkit
 import org.bukkit.plugin.java.JavaPlugin
 import java.io.File
 
@@ -27,6 +29,10 @@ class NovaKotlinGameDemo: JavaPlugin() {
 		// We also enable compass tracker since players will have trackers in this game
 		ModuleManager.require(CompassTracker::class.java)
 
+		val mapSelector = GUIMapVote()
+		Bukkit.getServer().pluginManager.registerEvents(mapSelector, this)
+		GameManager.getInstance().mapSelector = mapSelector
+
 		// Here we prepare the data directories
 		var mapFolder = File(dataFolder.path + File.separator + "Maps")
 		var worldFolder = File(dataFolder.path + File.separator + "Worlds")
@@ -41,7 +47,7 @@ class NovaKotlinGameDemo: JavaPlugin() {
 		FileUtils.forceMkdir(worldFolder)
 
 		// Register map modules
-		MapModuleManager.addMapModule("kotlindemogame.config", KotlinDemoGameConfig::class.java)
+		MapModuleManager.addMapModule("oitc.config", KotlinDemoGameConfig::class.java)
 
 		//Might not matter in this game since arrows instantly kills but this is how you prevent those players who think combat logging is funny
 		GameManager.getInstance().isUseCombatTagging = true

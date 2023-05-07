@@ -1,11 +1,15 @@
 package net.novauniverse.game.kotlindemo.game
 
 import net.md_5.bungee.api.ChatColor
+import net.md_5.bungee.api.ChatMessageType
+import net.md_5.bungee.api.chat.TextComponent
+import net.novauniverse.game.kotlindemo.game.mapmodules.config.HudType
 import net.novauniverse.game.kotlindemo.game.mapmodules.config.KotlinDemoGameConfig
 import net.zeeraa.novacore.commons.log.Log
 import net.zeeraa.novacore.commons.tasks.Task
 import net.zeeraa.novacore.spigot.NovaCore
 import net.zeeraa.novacore.spigot.abstraction.VersionIndependentUtils
+import net.zeeraa.novacore.spigot.abstraction.enums.VersionIndependentMaterial
 import net.zeeraa.novacore.spigot.gameengine.module.modules.game.GameEndReason
 import net.zeeraa.novacore.spigot.gameengine.module.modules.game.MapGame
 import net.zeeraa.novacore.spigot.gameengine.module.modules.game.elimination.PlayerQuitEliminationAction
@@ -13,9 +17,11 @@ import net.zeeraa.novacore.spigot.gameengine.module.modules.game.triggers.GameTr
 import net.zeeraa.novacore.spigot.gameengine.module.modules.game.triggers.RepeatingGameTrigger
 import net.zeeraa.novacore.spigot.gameengine.module.modules.game.triggers.TriggerFlag
 import net.zeeraa.novacore.spigot.tasks.SimpleTask
+import net.zeeraa.novacore.spigot.teams.TeamManager
 import net.zeeraa.novacore.spigot.utils.ItemBuilder
 import net.zeeraa.novacore.spigot.utils.PlayerUtils
 import net.zeeraa.novacore.spigot.utils.RandomFireworkEffect
+import net.zeeraa.novacore.spigot.version.v1_12_R1.MaterialNameList1_12
 import org.bukkit.Bukkit
 import org.bukkit.GameMode
 import org.bukkit.Location
@@ -25,9 +31,14 @@ import org.bukkit.event.EventHandler
 import org.bukkit.event.EventPriority
 import org.bukkit.event.Listener
 import org.bukkit.event.entity.EntityDamageByEntityEvent
+import org.bukkit.event.entity.EntityShootBowEvent
+import org.bukkit.event.entity.PlayerDeathEvent
 import org.bukkit.event.player.PlayerDropItemEvent
+import org.bukkit.event.player.PlayerPickupItemEvent
 import org.bukkit.plugin.Plugin
+import java.util.UUID
 import java.util.function.Consumer
+import java.util.function.IntToLongFunction
 
 
 /**
@@ -39,11 +50,23 @@ class KotlinDemoGame(plugin:Plugin): MapGame(plugin), Listener {
     private var started: Boolean = false
     private var ended: Boolean = false
 
+    private val arrowOwner = hashMapOf<Int, UUID>()
+    private val kills = hashMapOf<UUID, Int>()
+    private val respawn = hashMapOf<UUID, Boolean>()
+    private val respawnCooldown = (20 * 5).toLong()
+
     private var giveArrowDelay: Int = 5
     private var maxArrows: Int = 4
 
-    private var saturationTask: SimpleTask? = null
+    private var gameTimeSeconds : Int = 60
 
+    private var saturationTask: SimpleTask? = null
+    private var endGameTask: SimpleTask? = null
+
+    private var hudTask : SimpleTask? = null
+    private var currentTime : Int = 0
+
+    private var hudType : HudType = HudType.ACTION_BAR
     // To give the arrows we use game triggers. Game triggers are actions in the game that either can be manually triggered, triggered after a specified delay or act like a repeating timer for giving players items or handle reoccurring game events
     private var giveArrowTrigger: RepeatingGameTrigger? = null
 
@@ -53,11 +76,11 @@ class KotlinDemoGame(plugin:Plugin): MapGame(plugin), Listener {
     }
 
     override fun getName(): String {
-        return "kotlindemogame"
+        return "oitc"
     }
 
     override fun getDisplayName(): String {
-        return "Kotlin Demo Game"
+        return "One In The Chamber"
     }
 
     override fun getPlayerQuitEliminationAction(): PlayerQuitEliminationAction {
@@ -66,8 +89,8 @@ class KotlinDemoGame(plugin:Plugin): MapGame(plugin), Listener {
     }
 
     override fun eliminatePlayerOnDeath(player: Player?): Boolean {
-        // In this game we always eliminate the player on death
-        return true
+        // In this game we DON'T always eliminate the player on death
+        return false
     }
 
     override fun isPVPEnabled(): Boolean {
@@ -76,8 +99,7 @@ class KotlinDemoGame(plugin:Plugin): MapGame(plugin), Listener {
     }
 
     override fun autoEndGame(): Boolean {
-        // Since this game is a simple last man standing game we enable auto ending
-        return true
+        return false
     }
 
     override fun hasStarted(): Boolean {
@@ -94,13 +116,48 @@ class KotlinDemoGame(plugin:Plugin): MapGame(plugin), Listener {
     }
 
     override fun canAttack(p0: LivingEntity, p1: LivingEntity): Boolean {
-        // We don't need to check if players can attack each other in this game. isFriendlyFireAllowed takes care of preventing friendly fire
+
         return true
+    }
+
+    fun getMostKills() : Pair<String, Int> {
+        var name = "none"
+        var v = 0
+       kills.forEach { (t, u) ->
+           if (u > v) {
+               v = u
+               name = Bukkit.getPlayer(t).name
+           } else if (u == v) {
+               name += " ${Bukkit.getPlayer(t).name}"
+           }
+       }
+        return Pair(name, v)
     }
 
     override fun onStart() {
         if(started) {
             return
+        }
+
+        // Check if our config map module has been loaded and if so read the variables set in it
+        if(activeMap.mapData.hasMapModule(KotlinDemoGameConfig::class.java)) {
+            Log.info("Reading game settings from config module")
+            val config = activeMap.mapData.getMapModule(KotlinDemoGameConfig::class.java) as KotlinDemoGameConfig
+            if(config.giveArrowDelay > -1) {
+                giveArrowDelay = config.giveArrowDelay
+            }
+            if(config.maxArrows > -1) {
+                maxArrows = config.maxArrows
+            }
+            if(config.gameTime > -1) {
+                gameTimeSeconds = config.gameTime
+            }
+            try {
+                hudType = HudType.valueOf(config.hudType)
+            } catch (e : IllegalArgumentException) {
+                hudType = HudType.CHAT
+                Log.error("Invalid HUDType.")
+            }
         }
 
         // Let's make sure the players don't run out of food
@@ -114,21 +171,25 @@ class KotlinDemoGame(plugin:Plugin): MapGame(plugin), Listener {
         }, 20L)
         saturationTask!!.start()
 
-        // Check if our config map module has been loaded and if so read the variables set in it
-        if(activeMap.mapData.hasMapModule(KotlinDemoGameConfig::class.java)) {
-            Log.info("Reading game settings from config module")
-            val config = activeMap.mapData.getMapModule(KotlinDemoGameConfig::class.java) as KotlinDemoGameConfig
-
-            if(config.giveArrowDelay > -1) {
-                giveArrowDelay = config.giveArrowDelay
+        endGameTask = SimpleTask(plugin, {
+            currentTime++
+            if (currentTime >= gameTimeSeconds) {
+                endGame(GameEndReason.TIME)
+                endGameTask?.stop()
             }
+        }, 20L)
 
-            if(config.maxArrows > -1) {
-                maxArrows = config.maxArrows
+        hudTask = SimpleTask(plugin, {
+            Bukkit.getServer().onlinePlayers.forEach {
+                hudType.sendMessage(it, "${ChatColor.GREEN}${it.name}${ChatColor.WHITE}: ${ChatColor.RED}${kills[it.uniqueId] ?: 0} ${ChatColor.WHITE}| ${ChatColor.GREEN}Top Player(s)${ChatColor.WHITE}: ${ChatColor.GOLD}${getMostKills().first} ${ChatColor.WHITE}(${ChatColor.RED}${getMostKills().second}${ChatColor.WHITE}) | ${ChatColor.GREEN}Time Left${ChatColor.WHITE}: ${ChatColor.RED}${gameTimeSeconds - currentTime}s")
             }
-        }
+        }, hudType.getTaskTime())
 
-        giveArrowTrigger = RepeatingGameTrigger("kotlindemo.givearrows", 1L, giveArrowDelay * 20L) { _: GameTrigger?, _: TriggerFlag? ->
+        hudTask!!.start()
+        endGameTask!!.start()
+
+        /*
+        giveArrowTrigger = RepeatingGameTrigger("oitc.givearrows", 1L, giveArrowDelay * 20L) { _: GameTrigger?, _: TriggerFlag? ->
             run {
                 // onlinePlayers from the game class return the online players that are still in the game
                 onlinePlayers.forEach { p: Player ->
@@ -149,6 +210,7 @@ class KotlinDemoGame(plugin:Plugin): MapGame(plugin), Listener {
             }
         }
 
+
         // By adding DISABLE_LOGGING we keep the console clean. If the trigger only runs once every minute or so it's ok to keep the logs
         // note that the log level of this is TRACE so by default these logs are not shown unless the player or console run nova log set TRACE
         giveArrowTrigger!!.addFlag(TriggerFlag.DISABLE_LOGGING)
@@ -157,8 +219,11 @@ class KotlinDemoGame(plugin:Plugin): MapGame(plugin), Listener {
         giveArrowTrigger!!.addFlag(TriggerFlag.START_ON_GAME_START)
         giveArrowTrigger!!.addFlag(TriggerFlag.STOP_ON_GAME_END)
 
+
         // Now we register the trigger to the game
         addTrigger(giveArrowTrigger!!)
+
+         */
 
         // Now we teleport the players
         val spawnLocations : MutableList<Location> = ArrayList()
@@ -188,7 +253,9 @@ class KotlinDemoGame(plugin:Plugin): MapGame(plugin), Listener {
                 it.teleport(location)
 
                 // Give the player some items
-                it.inventory.setItem(0, ItemBuilder(Material.BOW).setUnbreakable(true).build())
+                it.inventory.setItem(0, ItemBuilder(Material.STONE_SWORD).setName("${ChatColor.RESET}Sword").setUnbreakable(true).build())
+                it.inventory.setItem(1, ItemBuilder(Material.BOW).setUnbreakable(true).build())
+                it.inventory.setItem(2, ItemBuilder(Material.ARROW).setAmount(1).build())
                 it.inventory.setItem(8, ItemBuilder(Material.COMPASS).setName("${ChatColor.GOLD}Player Tracker").build())
 
                 it.gameMode = GameMode.SURVIVAL
@@ -213,6 +280,8 @@ class KotlinDemoGame(plugin:Plugin): MapGame(plugin), Listener {
 
         // Stop the food task
         Task.tryStopTask(saturationTask)
+        Task.tryStopTask(endGameTask)
+        Task.tryStopTask(hudTask)
 
         // Spawn some fireworks
         activeMap.starterLocations.forEach(Consumer { location: Location ->
@@ -233,17 +302,39 @@ class KotlinDemoGame(plugin:Plugin): MapGame(plugin), Listener {
             PlayerUtils.clearPlayerInventory(player)
             PlayerUtils.resetPlayerXP(player)
             player.gameMode = GameMode.SPECTATOR
+
+            player.sendMessage("${getMostKills().first} won the game with ${ChatColor.RED}${getMostKills().second}${ChatColor.WHITE} kills.")
         }
 
         ended = true
     }
 
-    // Respawn in spectator mode
+    // Respawn back in one of the spawn locations.
     override fun onPlayerRespawn(player: Player) {
-        Bukkit.getScheduler().scheduleSyncDelayedTask(NovaCore.getInstance(), {
-            Log.trace(name, "Calling tpToSpectator(" + player.name + ")")
-            tpToSpectator(player)
-        }, 5L)
+        PlayerUtils.clearPotionEffects(player)
+        PlayerUtils.resetPlayerXP(player)
+
+        PlayerUtils.setMaxHealth(player, 20.0)
+        PlayerUtils.fullyHealPlayer(player)
+        if (!player.inventory.contains(Material.ARROW)) {
+            player.inventory.addItem(ItemBuilder(Material.ARROW).setAmount(1).build())
+        }
+
+        var task : SimpleTask? = null
+        task = SimpleTask(plugin, {
+            player.teleport(activeMap.starterLocations.random())
+            Task.tryStopTask(task)
+        }, 2L, 20L)
+
+        respawn[player.uniqueId] = true
+        var respawnTimer : SimpleTask? = null
+        respawnTimer = SimpleTask(plugin, {
+            respawn[player.uniqueId] = false
+            respawnTimer?.stop()
+        }, respawnCooldown,40L)
+
+        respawnTimer.start()
+        task.start()
     }
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
@@ -255,14 +346,72 @@ class KotlinDemoGame(plugin:Plugin): MapGame(plugin), Listener {
         e.isCancelled = true
     }
 
+
+    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+    fun onBowFired(e : EntityShootBowEvent) {
+        if (e.entity is Player) {
+            arrowOwner[e.projectile.entityId] = e.entity.uniqueId
+        }
+    }
+
+    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+    fun onArrowPickup(e : PlayerPickupItemEvent) {
+        if (arrowOwner.containsKey(e.item.entityId)) {
+            arrowOwner.remove(e.item.entityId)
+        }
+        e.isCancelled = true
+    }
+
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
     fun onEntityDamageByEntity(e: EntityDamageByEntityEvent) {
-        if(!started) {
+        if (!started) {
             return
         }
 
-        if(e.damager is Arrow) {
-            e.damage = 1000.0
+        if (e.entity is Player) {
+            if (e.damager is Arrow && arrowOwner[e.damager.entityId] != null) {
+                e.damage = 1000.0
+                val k: Player = Bukkit.getPlayer(arrowOwner[e.damager.entityId])
+
+                if (!k.inventory.contains(Material.ARROW)) {
+                    k.inventory.addItem(ItemBuilder(Material.ARROW).build())
+                    k.sendMessage("${ChatColor.GREEN}Your arrow has respawned")
+                }
+            }
+
+            if (respawn[e.entity.uniqueId] == true) { e.isCancelled = true }
+
+            if (e.damager is Player) {
+                if (respawn[e.damager.uniqueId] == true) { respawn[e.damager.uniqueId] = false }
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+    fun onDeath(e : PlayerDeathEvent) {
+        if (e.entity is Player) {
+            if (e.entity.killer is Player) {
+                val i = kills[e.entity.killer.uniqueId] ?: 0
+                kills[e.entity.killer.uniqueId] = i + 1
+                e.entity.killer.sendTitle("", "[${ChatColor.RED}⚔${ChatColor.RESET}] ${e.entity.name}")
+
+                var task : SimpleTask? = null
+                task = SimpleTask(plugin, {
+                    PlayerUtils.fullyHealPlayer(e.entity.killer)
+                    if (!e.entity.killer.inventory.contains(Material.ARROW)) {
+                        e.entity.killer.inventory.addItem(ItemBuilder(Material.ARROW).build())
+                        e.entity.killer.sendMessage("${ChatColor.GREEN}Your arrow has respawned")
+                    }
+
+                    Task.tryStopTask(task)
+                }, 5L, 20L)
+                task.stop()
+
+                if (TeamManager.getTeamManager().getPlayerTeam(e.entity.killer.uniqueId) != null && TeamManager.getTeamManager().getPlayerTeam(e.entity.uniqueId) != null) {
+                    Bukkit.getServer().onlinePlayers.forEach { it.sendMessage("${TeamManager.getTeamManager().getPlayerTeam(e.entity.uniqueId)!!.teamColor ?: ChatColor.WHITE}${e.entity.name} ${ChatColor.RED}was killed by ${TeamManager.getTeamManager().getPlayerTeam(e.entity.killer.uniqueId)!!.teamColor ?: ChatColor.WHITE}${e.entity.killer.name}") }
+                    VersionIndependentUtils.get().sendTitle(e.entity.killer, "", "[${ChatColor.RED}⚔${ChatColor.RESET}] ${TeamManager.getTeamManager().getPlayerTeam(e.entity.uniqueId)!!.teamColor ?: ChatColor.WHITE}${e.entity.name}", 0, 40, 0)
+                }
+            }
         }
     }
 }

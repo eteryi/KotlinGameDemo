@@ -8,4 +8,7 @@ import org.json.JSONObject
 class KotlinDemoGameConfig(json: JSONObject):MapModule(json) {
     val giveArrowDelay: Int = json.optInt("give_arrow_delay", -1)
     val maxArrows: Int = json.optInt("max_arrows", -1)
+
+    val gameTime : Int = json.optInt("time_seconds", -1)
+    val hudType : String = json.optString("hud_type", "ACTION_BAR")
 }
