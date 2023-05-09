@@ -1,15 +1,11 @@
 package net.novauniverse.game.kotlindemo.game
 
 import net.md_5.bungee.api.ChatColor
-import net.md_5.bungee.api.ChatMessageType
-import net.md_5.bungee.api.chat.TextComponent
 import net.novauniverse.game.kotlindemo.game.mapmodules.config.HudType
 import net.novauniverse.game.kotlindemo.game.mapmodules.config.KotlinDemoGameConfig
 import net.zeeraa.novacore.commons.log.Log
 import net.zeeraa.novacore.commons.tasks.Task
-import net.zeeraa.novacore.spigot.NovaCore
 import net.zeeraa.novacore.spigot.abstraction.VersionIndependentUtils
-import net.zeeraa.novacore.spigot.abstraction.enums.VersionIndependentMaterial
 import net.zeeraa.novacore.spigot.gameengine.module.modules.game.GameEndReason
 import net.zeeraa.novacore.spigot.gameengine.module.modules.game.MapGame
 import net.zeeraa.novacore.spigot.gameengine.module.modules.game.elimination.PlayerQuitEliminationAction
@@ -21,7 +17,6 @@ import net.zeeraa.novacore.spigot.teams.TeamManager
 import net.zeeraa.novacore.spigot.utils.ItemBuilder
 import net.zeeraa.novacore.spigot.utils.PlayerUtils
 import net.zeeraa.novacore.spigot.utils.RandomFireworkEffect
-import net.zeeraa.novacore.spigot.version.v1_12_R1.MaterialNameList1_12
 import org.bukkit.*
 import org.bukkit.entity.*
 import org.bukkit.event.EventHandler
@@ -29,7 +24,6 @@ import org.bukkit.event.EventPriority
 import org.bukkit.event.Listener
 import org.bukkit.event.entity.EntityDamageByEntityEvent
 import org.bukkit.event.entity.EntityDamageEvent
-import org.bukkit.event.entity.EntityShootBowEvent
 import org.bukkit.event.entity.EntitySpawnEvent
 import org.bukkit.event.entity.PlayerDeathEvent
 import org.bukkit.event.player.PlayerDropItemEvent
@@ -37,8 +31,6 @@ import org.bukkit.event.player.PlayerPickupItemEvent
 import org.bukkit.plugin.Plugin
 import java.util.UUID
 import java.util.function.Consumer
-import java.util.function.IntToLongFunction
-
 
 /**
  * This is our game class.
@@ -120,7 +112,7 @@ class KotlinDemoGame(plugin:Plugin): MapGame(plugin), Listener {
     }
 
     // Mostly just so I don't have to repeat myself trying to get the player with most kills and their kills. Not used much but still here.
-    fun getMostKills() : Pair<String, Int> {
+    private fun getMostKills() : Pair<String, Int> {
         var name = "none"
         var v = 0
        kills.forEach { (t, u) ->
@@ -391,7 +383,6 @@ class KotlinDemoGame(plugin:Plugin): MapGame(plugin), Listener {
             if (e.entity.killer is Player) {
                 val i = kills[e.entity.killer.uniqueId] ?: 0
                 kills[e.entity.killer.uniqueId] = i + 1
-                e.entity.killer.sendTitle("", "[${ChatColor.RED}⚔${ChatColor.RESET}] ${e.entity.name}")
 
                 var task : SimpleTask? = null
                 task = SimpleTask(plugin, {
